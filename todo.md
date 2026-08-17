@@ -1,0 +1,23 @@
+# Project TODO
+
+- [x] Criar autenticação própria por usuário e senha, com senhas protegidas, sessão segura, logout em todas as telas e limite total de três usuários autorizados.
+- [x] Configurar a conta administrativa inicial e aplicar controle de acesso por papel para impedir que usuários comuns abram o painel administrativo.
+- [x] Modelar e migrar o banco de dados para usuários autorizados, tabela de preços, orçamentos, itens de orçamento e dados do cliente.
+- [x] Estruturar no banco a tabela de serviços e preços da planilha para Sofá, Poltrona, Cadeira, Banqueta e Colchão, incluindo lugares, tipo, tecido, lavagem e impermeabilização.
+- [x] Implementar a regra de preço por item com cálculo instantâneo de quantidade, serviço escolhido e acréscimos de sujeira de 0%, 20% e 40%.
+- [x] Construir o layout global fiel às referências: fundo escuro, dourado #D4A843, fontes Montserrat/Open Sans, cartões discretos e rodapé.
+- [x] Criar a tela de login restrita, responsiva e alinhada ao padrão visual de referência.
+- [x] Criar a tela de escolha de produto com os cinco produtos, cartões, menu, ícone de usuário e saída da sessão.
+- [x] Criar a tela de especificações de produto com opções condicionais, preços em reais por seleção e atualização do total em tempo real.
+- [x] Criar a tela de quantidade com controles de adicionar/remover, preço unitário, subtotal e inclusão no orçamento.
+- [x] Criar o resumo do orçamento com lista de itens, subtotais, total geral, exclusão individual e continuidade do fluxo sem perda indevida de dados.
+- [x] Criar o formulário de finalização com validação obrigatória de nome, telefone, endereço e data/horário do serviço.
+- [x] Implementar salvamento do orçamento e abertura do WhatsApp com mensagem detalhada de cliente, itens, serviços, quantidades e valores.
+- [x] Criar o histórico de orçamentos com busca por cliente ou data, visualização e reabertura de um orçamento salvo.
+- [x] Criar painel administrativo para gerenciar usuários autorizados e editar a tabela de preços sem alteração de código.
+- [x] Cobrir regras de cálculo, validação, acesso administrativo e serialização da mensagem do WhatsApp com testes Vitest.
+- [x] Validar a interface e os fluxos em telas de celular, tablet e desktop, corrigindo regressões visuais ou funcionais.
+- [x] Adicionar testes Vitest para as validações obrigatórias da finalização, incluindo dados do cliente, telefone, data/hora e presença de itens.
+- [x] Validar visualmente os fluxos autenticados principais em desktop, tablet e celular, incluindo catálogo, especificações, quantidade, resumo, histórico e administração.
+- [x] Adicionar testes Vitest isolados para nome obrigatório, endereço obrigatório, telefone inválido, data/hora inválida e ausência de itens na finalização.
+- [x] Verificar os fluxos autenticados de catálogo, orçamento, histórico e administração em viewport de tablet e celular.

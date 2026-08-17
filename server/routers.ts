@@ -1,28 +1,274 @@
-import { COOKIE_NAME } from "@shared/const";
-import { getSessionCookieOptions } from "./_core/cookies";
+import { TRPCError } from "@trpc/server";
+import { and, asc, count, eq, sql } from "drizzle-orm";
+import { z } from "zod";
+import {
+  estimateItems,
+  estimates,
+  pricingRules,
+  users,
+} from "../drizzle/schema";
+import {
+  buildWhatsAppMessage,
+  calculateLineTotal,
+  calculateUnitPrice,
+  dirtLevels,
+  dirtLevelInfo,
+  type DirtLevel,
+  type ServiceType,
+} from "../shared/quote";
+import { clearUserSession, createUserSession, sanitizeUser, verifyPassword } from "./auth";
+import {
+  getAuthorizedUserCount,
+  getCredentialUser,
+  getDb,
+  getEstimateWithItems,
+  getPricingRuleById,
+  listAuthorizedUsers,
+  listEstimates,
+  listPricingRules,
+} from "./db";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+
+const serviceSchema = z.enum(["lavagem", "impermeabilizacao"]);
+const dirtSchema = z.enum(dirtLevels);
+const passwordSchema = z.string().min(8, "A senha deve ter pelo menos 8 caracteres.");
+
+const catalogRuleSchema = z.object({
+  productKey: z.string().min(1).max(48),
+  productName: z.string().min(1).max(80),
+  places: z.string().min(1).max(32),
+  itemType: z.string().min(1).max(64),
+  fabric: z.string().min(1).max(64),
+  washPrice: z.number().nonnegative(),
+  waterproofPrice: z.number().nonnegative(),
+  active: z.boolean().default(true),
+});
+
+const quoteItemSchema = z.object({
+  pricingRuleId: z.number().int().positive(),
+  dirtLevel: dirtSchema,
+  service: serviceSchema,
+  quantity: z.number().int().min(1).max(100),
+});
+
+function checkPhone(value: string) {
+  return /^\+?[\d\s()\-]{10,20}$/.test(value) && value.replace(/\D/g, "").length >= 10;
+}
+
+function toNumber(value: string | number) {
+  return typeof value === "number" ? value : Number(value);
+}
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+    me: publicProcedure.query(({ ctx }) => (ctx.user ? sanitizeUser(ctx.user) : null)),
+    login: publicProcedure
+      .input(z.object({ username: z.string().trim().min(3), password: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const user = await getCredentialUser(input.username.toLowerCase());
+        if (!user || !verifyPassword(input.password, user.passwordHash)) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Usuário ou senha inválidos." });
+        }
+        await createUserSession(ctx.res, user.id);
+        return sanitizeUser(user);
+      }),
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      await clearUserSession(ctx.req, ctx.res);
+      return { success: true } as const;
     }),
   }),
+  catalog: router({
+    list: protectedProcedure.query(async () => {
+      const rules = await listPricingRules();
+      return rules.map(rule => ({ ...rule, washPrice: toNumber(rule.washPrice), waterproofPrice: toNumber(rule.waterproofPrice) }));
+    }),
+  }),
+  estimates: router({
+    list: protectedProcedure
+      .input(z.object({ search: z.string().trim().max(160).optional(), from: z.string().datetime().optional(), to: z.string().datetime().optional() }))
+      .query(async ({ input }) => {
+        const data = await listEstimates({
+          search: input.search || undefined,
+          from: input.from ? new Date(input.from) : undefined,
+          to: input.to ? new Date(input.to) : undefined,
+        });
+        return data.map(estimate => ({ ...estimate, subtotal: toNumber(estimate.subtotal), total: toNumber(estimate.total) }));
+      }),
+    get: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {
+      const result = await getEstimateWithItems(input.id);
+      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Orçamento não encontrado." });
+      return {
+        estimate: { ...result.estimate, subtotal: toNumber(result.estimate.subtotal), total: toNumber(result.estimate.total) },
+        items: result.items.map(item => ({ ...item, unitPrice: toNumber(item.unitPrice), lineTotal: toNumber(item.lineTotal) })),
+      };
+    }),
+    save: protectedProcedure
+      .input(
+        z.object({
+          customerName: z.string().trim().min(3, "Informe o nome completo.").max(160),
+          customerPhone: z.string().trim().refine(checkPhone, "Informe um telefone válido."),
+          customerAddress: z.string().trim().min(8, "Informe o endereço completo.").max(1000),
+          scheduledAt: z.string().datetime(),
+          items: z.array(quoteItemSchema).min(1, "Adicione ao menos um item ao orçamento."),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db || !ctx.user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+        const calculatedItems = [] as Array<{
+          rule: NonNullable<Awaited<ReturnType<typeof getPricingRuleById>>>;
+          dirtLevel: DirtLevel;
+          service: ServiceType;
+          quantity: number;
+          unitPrice: number;
+          lineTotal: number;
+        }>;
+
+        for (const item of input.items) {
+          const rule = await getPricingRuleById(item.pricingRuleId);
+          if (!rule || !rule.active) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Um dos preços selecionados não está mais disponível." });
+          }
+          const basePrice = item.service === "lavagem" ? toNumber(rule.washPrice) : toNumber(rule.waterproofPrice);
+          calculatedItems.push({
+            rule,
+            dirtLevel: item.dirtLevel,
+            service: item.service,
+            quantity: item.quantity,
+            unitPrice: calculateUnitPrice(basePrice, item.dirtLevel),
+            lineTotal: calculateLineTotal(basePrice, item.dirtLevel, item.quantity),
+          });
+        }
+
+        const total = calculatedItems.reduce((sum, item) => sum + item.lineTotal, 0);
+        const scheduledAt = new Date(input.scheduledAt);
+        const inserted = await db.insert(estimates).values({
+          customerName: input.customerName,
+          customerPhone: input.customerPhone,
+          customerAddress: input.customerAddress,
+          scheduledAt,
+          subtotal: total.toFixed(2),
+          total: total.toFixed(2),
+          createdByUserId: ctx.user.id,
+        });
+        const estimateId = Number(inserted[0].insertId);
+
+        await db.insert(estimateItems).values(
+          calculatedItems.map(item => ({
+            estimateId,
+            pricingRuleId: item.rule.id,
+            productKey: item.rule.productKey,
+            productName: item.rule.productName,
+            places: item.rule.places,
+            itemType: item.rule.itemType,
+            fabric: item.rule.fabric,
+            dirtLevel: item.dirtLevel,
+            dirtSurcharge: dirtLevelInfo[item.dirtLevel].surcharge,
+            service: item.service,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice.toFixed(2),
+            lineTotal: item.lineTotal.toFixed(2),
+          }))
+        );
+
+        const message = buildWhatsAppMessage({
+          estimateId,
+          customerName: input.customerName,
+          customerPhone: input.customerPhone,
+          customerAddress: input.customerAddress,
+          scheduledAt,
+          total,
+          items: calculatedItems.map(item => ({
+            productName: item.rule.productName,
+            places: item.rule.places,
+            itemType: item.rule.itemType,
+            fabric: item.rule.fabric,
+            dirtLevel: item.dirtLevel,
+            service: item.service,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            lineTotal: item.lineTotal,
+          })),
+        });
+        return { estimateId, message };
+      }),
+  }),
+  admin: router({
+    priceList: adminProcedure.query(async () => {
+      const rules = await listPricingRules(true);
+      return rules.map(rule => ({ ...rule, washPrice: toNumber(rule.washPrice), waterproofPrice: toNumber(rule.waterproofPrice) }));
+    }),
+    savePrice: adminProcedure
+      .input(catalogRuleSchema.extend({ id: z.number().int().positive().optional() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        const { id, ...priceFields } = input;
+        const values = { ...priceFields, washPrice: input.washPrice.toFixed(2), waterproofPrice: input.waterproofPrice.toFixed(2) };
+        if (id) {
+          await db.update(pricingRules).set(values).where(eq(pricingRules.id, id));
+          return { id };
+        }
+        const inserted = await db.insert(pricingRules).values(values);
+        return { id: Number(inserted[0].insertId) };
+      }),
+    removePrice: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+      await db.update(pricingRules).set({ active: false }).where(eq(pricingRules.id, input.id));
+      return { success: true } as const;
+    }),
+    users: adminProcedure.query(async () => listAuthorizedUsers()),
+    saveUser: adminProcedure
+      .input(
+        z.object({
+          id: z.number().int().positive().optional(),
+          username: z.string().trim().min(3).max(64).optional(),
+          name: z.string().trim().min(2).max(160),
+          role: z.enum(["admin", "user"]),
+          active: z.boolean(),
+          password: passwordSchema.optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        if (!input.id) {
+          if (!input.username || !input.password) throw new TRPCError({ code: "BAD_REQUEST", message: "Usuário e senha são obrigatórios." });
+          if ((await getAuthorizedUserCount()) >= 3) throw new TRPCError({ code: "BAD_REQUEST", message: "O limite de três usuários autorizados já foi atingido." });
+          const { randomBytes, scryptSync } = await import("node:crypto");
+          const salt = randomBytes(16).toString("hex");
+          const passwordHash = `${salt}:${scryptSync(input.password, salt, 64).toString("hex")}`;
+          const inserted = await db.insert(users).values({
+            username: input.username.toLowerCase(),
+            passwordHash,
+            name: input.name,
+            loginMethod: "password",
+            role: input.role,
+            active: input.active,
+          });
+          return { id: Number(inserted[0].insertId) };
+        }
+
+        const [current] = await db.select().from(users).where(eq(users.id, input.id)).limit(1);
+        if (!current || current.loginMethod !== "password") throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado." });
+        if (current.id === ctx.user.id && !input.active) throw new TRPCError({ code: "BAD_REQUEST", message: "Você não pode desativar a própria conta." });
+        if (current.id === ctx.user.id && current.role === "admin" && input.role !== "admin") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Você não pode remover o próprio acesso administrativo." });
+        }
+        const updates: Record<string, unknown> = { name: input.name, role: input.role, active: input.active };
+        if (input.password) {
+          const { randomBytes, scryptSync } = await import("node:crypto");
+          const salt = randomBytes(16).toString("hex");
+          updates.passwordHash = `${salt}:${scryptSync(input.password, salt, 64).toString("hex")}`;
+        }
+        await db.update(users).set(updates).where(eq(users.id, input.id));
+        return { id: input.id };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

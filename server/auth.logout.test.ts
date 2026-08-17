@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import { COOKIE_NAME } from "../shared/const";
+import { APP_SESSION_COOKIE } from "./auth";
 import type { TrpcContext } from "./_core/context";
 
 type CookieCall = {
@@ -16,10 +16,13 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
   const user: AuthenticatedUser = {
     id: 1,
     openId: "sample-user",
+    username: "sample.user",
+    passwordHash: null,
     email: "sample@example.com",
     name: "Sample User",
     loginMethod: "manus",
     role: "user",
+    active: true,
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
@@ -50,12 +53,10 @@ describe("auth.logout", () => {
 
     expect(result).toEqual({ success: true });
     expect(clearedCookies).toHaveLength(1);
-    expect(clearedCookies[0]?.name).toBe(COOKIE_NAME);
+    expect(clearedCookies[0]?.name).toBe(APP_SESSION_COOKIE);
     expect(clearedCookies[0]?.options).toMatchObject({
-      maxAge: -1,
-      secure: true,
-      sameSite: "none",
       httpOnly: true,
+      sameSite: "lax",
       path: "/",
     });
   });
