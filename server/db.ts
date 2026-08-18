@@ -146,11 +146,12 @@ export async function touchUserSignIn(userId: number) {
   await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, userId));
 }
 
-export async function listEstimates(filters: { quoteNumber?: number }) {
+export async function listEstimates(filters: { quoteNumber?: number; customerName?: string }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
   if (filters.quoteNumber) conditions.push(eq(estimates.id, filters.quoteNumber));
+  if (filters.customerName) conditions.push(like(estimates.customerName, `%${filters.customerName}%`));
   return db
     .select()
     .from(estimates)

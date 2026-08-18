@@ -131,7 +131,7 @@ function AppBrand({ compact = false }: { compact?: boolean }) {
     <div className={`brand ${compact ? "login-brand" : ""}`}>
       <span className="brand-mark" aria-hidden="true"><Box size={21} strokeWidth={1.8} /></span>
       <span>
-        <span className="brand-title block">LIMPEZA PREMIUM</span>
+        <span className="brand-title block">CASAL CLEAN</span>
         <span className="brand-subtitle block">Orçamento Personalizado</span>
       </span>
     </div>
@@ -141,7 +141,7 @@ function AppBrand({ compact = false }: { compact?: boolean }) {
 function Footer() {
   return (
     <footer className="footer">
-      <div>© 2026 Limpeza Premium — Todos os direitos reservados</div>
+      <div>© 2026 Casal Clean — Todos os direitos reservados</div>
       <div className="footer-contacts"><span>(11) 97685-7410</span><span>atendimento.casalclean@gmail.com</span></div>
     </footer>
   );
@@ -251,9 +251,9 @@ function ProductSpecifications({ productKey, rules, onBack, onContinue }: { prod
     <div className="flow-area">
       <div className="flex items-center gap-3"><button className="back-button" onClick={onBack} aria-label="Voltar"><ArrowLeft size={18} /></button><h1 className="section-heading no-after !mb-0">Especificações — {selectedRule.productName}</h1></div>
       <div className="mt-7">
-        <div className="field-group"><span className="label">Lugares</span><div className="choice-row">{placesOptions.map(option => <button key={option} className={`choice-button ${places === option ? "active" : ""}`} onClick={() => setPlaces(option)}>{option.replace(" lugares", "").replace(" lugar", "")}<small>{option.includes("1") ? "lugar" : "lugares"}</small></button>)}</div></div>
-        <div className="field-group"><span className="label">Tipo</span><div className="choice-row">{typeOptions.map(option => <button key={option} className={`choice-button ${itemType === option ? "active" : ""}`} onClick={() => setItemType(option)}>{cleanLabel(option)}</button>)}</div></div>
-        <div className="field-group"><span className="label">Tecido</span><div className="choice-row">{fabricOptions.map(option => <button key={option} className={`choice-button ${fabric === option ? "active" : ""}`} onClick={() => setFabric(option)}>{cleanLabel(option)}</button>)}</div></div>
+        <div className="field-group"><span className="label">Lugares</span><div className="choice-row">{placesOptions.map(option => { const price = Math.min(...productRules.filter(rule => rule.places === option).flatMap(rule => [rule.washPrice, rule.waterproofPrice])); return <button key={option} className={`choice-button ${places === option ? "active" : ""}`} onClick={() => setPlaces(option)}>{option.replace(" lugares", "").replace(" lugar", "")}<small>{option.includes("1") ? "lugar" : "lugares"} · {formatCurrency(price)}</small></button>; })}</div></div>
+        <div className="field-group"><span className="label">Tipo</span><div className="choice-row">{typeOptions.map(option => { const price = Math.min(...productRules.filter(rule => rule.places === places && rule.itemType === option).flatMap(rule => [rule.washPrice, rule.waterproofPrice])); return <button key={option} className={`choice-button ${itemType === option ? "active" : ""}`} onClick={() => setItemType(option)}>{cleanLabel(option)}<small>{formatCurrency(price)}</small></button>; })}</div></div>
+        <div className="field-group"><span className="label">Tecido</span><div className="choice-row">{fabricOptions.map(option => { const price = Math.min(...productRules.filter(rule => rule.places === places && rule.itemType === itemType && rule.fabric === option).flatMap(rule => [rule.washPrice, rule.waterproofPrice])); return <button key={option} className={`choice-button ${fabric === option ? "active" : ""}`} onClick={() => setFabric(option)}>{cleanLabel(option)}<small>{formatCurrency(price)}</small></button>; })}</div></div>
         <div className="field-group"><span className="label">Nível de sujeira</span>{(["leve", "medio", "pesado"] as DirtLevel[]).map(level => <button key={level} className={`dirt-choice ${dirtLevel === level ? "active" : ""}`} onClick={() => setDirtLevel(level)}><span><span className="choice-title block">{dirtLevelInfo[level].label}</span><span className="choice-subtitle block">{dirtLevelInfo[level].description}</span></span><span className="choice-price">{dirtLevelInfo[level].surcharge ? `+${dirtLevelInfo[level].surcharge}%` : "Sem acréscimo"}</span></button>)}</div>
         <div className="field-group"><span className="label">Serviço</span>{(["lavagem", "impermeabilizacao"] as ServiceType[]).map(option => { const price = option === "lavagem" ? selectedRule.washPrice : selectedRule.waterproofPrice; return <button key={option} className={`service-choice ${service === option ? "active" : ""}`} onClick={() => setService(option)}><span><span className="choice-title block">{option === "lavagem" ? "Lavagem" : "Impermeabilização"}</span><span className="choice-subtitle block">Preço por unidade conforme tabela</span></span><span className="choice-price">{formatCurrency(price)}</span></button>; })}</div>
       </div>
@@ -341,12 +341,14 @@ function CustomerScreen({ items, customer, setCustomer, onBack, onComplete }: { 
 
 function HistoryScreen({ onBack, onReopen }: { onBack: () => void; onReopen: (id: number) => void }) {
   const [search, setSearch] = useState("");
-  const quoteNumber = Number(search.replace(/\D/g, "")) || undefined;
-  const data = trpc.estimates.list.useQuery({ quoteNumber });
+  const normalizedSearch = search.trim();
+  const quoteNumber = /^#?\d+$/.test(normalizedSearch) ? Number(normalizedSearch.replace(/\D/g, "")) || undefined : undefined;
+  const customerName = quoteNumber ? undefined : normalizedSearch || undefined;
+  const data = trpc.estimates.list.useQuery({ quoteNumber, customerName });
   return (
     <div>
       <div className="flex items-center gap-3"><button className="back-button" onClick={onBack} aria-label="Voltar"><ArrowLeft size={18} /></button><h1 className="section-heading no-after !mb-0">Histórico de orçamentos</h1></div>
-      <div className="history-card mt-5"><div className="history-topbar"><div className="input-shell"><Search className="input-icon" /><input className="text-input" inputMode="numeric" placeholder="Buscar por número do orçamento" value={search} onChange={event => setSearch(event.target.value)} /></div></div>{data.isLoading ? <div className="empty-state"><Loader2 className="mx-auto mb-2 animate-spin" />Carregando histórico...</div> : !data.data?.length ? <div className="empty-state">Nenhum orçamento encontrado.</div> : <div className="table-scroll"><table className="data-table"><thead><tr><th>#</th><th>Cliente</th><th>Agendamento</th><th>Total</th><th></th></tr></thead><tbody>{data.data.map(estimate => <tr key={estimate.id}><td>{estimate.quoteNumber}</td><td><strong>{estimate.customerName}</strong><br /><span className="text-[#aaa6a1]">{estimate.customerPhone}</span></td><td>{new Date(estimate.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</td><td className="table-money">{formatCurrency(estimate.total)}</td><td><button className="table-button" onClick={() => onReopen(estimate.id)}>Reabrir</button></td></tr>)}</tbody></table></div>}</div>
+      <div className="history-card mt-5"><div className="history-topbar"><div className="input-shell"><Search className="input-icon" /><input className="text-input" inputMode="search" placeholder="Buscar por número ou nome do cliente" value={search} onChange={event => setSearch(event.target.value)} /></div></div>{data.isLoading ? <div className="empty-state"><Loader2 className="mx-auto mb-2 animate-spin" />Carregando histórico...</div> : !data.data?.length ? <div className="empty-state">Nenhum orçamento encontrado.</div> : <div className="table-scroll"><table className="data-table"><thead><tr><th>#</th><th>Cliente</th><th>Agendamento</th><th>Total</th><th></th></tr></thead><tbody>{data.data.map(estimate => <tr key={estimate.id}><td>{estimate.quoteNumber}</td><td><strong>{estimate.customerName}</strong><br /><span className="text-[#aaa6a1]">{estimate.customerPhone}</span></td><td>{new Date(estimate.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</td><td className="table-money">{formatCurrency(estimate.total)}</td><td><button className="table-button" onClick={() => onReopen(estimate.id)}>Reabrir</button></td></tr>)}</tbody></table></div>}</div>
     </div>
   );
 }

@@ -119,9 +119,9 @@ export const appRouter = router({
   }),
   estimates: router({
     list: protectedProcedure
-      .input(z.object({ quoteNumber: z.number().int().positive().optional() }))
+      .input(z.object({ quoteNumber: z.number().int().positive().optional(), customerName: z.string().trim().min(1).max(160).optional() }))
       .query(async ({ input }) => {
-        const data = await listEstimates({ quoteNumber: input.quoteNumber });
+        const data = await listEstimates({ quoteNumber: input.quoteNumber, customerName: input.customerName });
         return data.map(estimate => ({ ...estimate, quoteNumber: formatEstimateNumber(estimate.id), subtotal: toNumber(estimate.subtotal), total: toNumber(estimate.total) }));
       }),
     get: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {

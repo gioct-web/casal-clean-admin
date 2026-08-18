@@ -32,3 +32,14 @@
 - [x] Executar e registrar, por formato de tela, buscas por número, cálculo, validações de telefone/endereço e abertura do link de WhatsApp derivado do orçamento salvo.
 - [x] Validar login e persistência de sessão em celular, tablet, desktop e tela ampla, com evidência específica por formato.
 - [x] Executar em celular, tablet, desktop e tela ampla a busca por número, a conferência de cálculo, as rejeições de telefone/endereço e a abertura do link wa.me do orçamento salvo, registrando os resultados.
+- [x] Auditar a implementação atual contra os requisitos consolidados, preservando componentes, atributos data-loc, comportamento e identidade visual existentes.
+- [x] Padronizar textos de marca para Casal Clean sem modificar cores, fontes, layouts, animações ou fluxos já funcionais.
+- [x] Confirmar que o histórico permite busca por número único ou nome do cliente e que o resumo possui retorno visual consistente.
+- [x] Validar em formatos de celular, tablet, desktop e tela ampla que a consolidação não introduziu regressões visuais ou funcionais.
+- [x] Validar explicitamente a tela Seu orçamento após a consolidação final, confirmando o botão Voltar e o retorno sem perda de estado.
+- [x] Executar verificação final pós-ajustes em celular, tablet e tela ampla, cobrindo login, catálogo, histórico por número/nome e resumo, e registrar a evidência.
+- [x] Revalidar a tela Seu orçamento reabrindo um orçamento salvo, usando Voltar, retornando ao orçamento e comprovando a preservação de itens e totais.
+- [x] Executar validação final por celular, tablet e tela ampla cobrindo login completo, catálogo autenticado, busca por número, busca por nome e resumo, com evidência separada por viewport e etapa.
+- [x] Executar nova validação em celular, tablet e tela ampla com evidências separadas de login completo, catálogo autenticado, busca por número, busca por nome e resumo.
+- [x] Registrar artefatos verificáveis da tela ampla e do desktop para todas as etapas críticas, além das evidências existentes de celular e tablet.
+- [x] Executar e registrar artefatos específicos de desktop para login completo, catálogo autenticado, busca por número, busca por nome e resumo.
