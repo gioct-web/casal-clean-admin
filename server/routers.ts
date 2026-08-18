@@ -13,6 +13,7 @@ import {
   calculateUnitPrice,
   dirtLevels,
   dirtLevelInfo,
+  formatEstimateNumber,
   type DirtLevel,
   type ServiceType,
 } from "../shared/quote";
@@ -53,7 +54,38 @@ const quoteItemSchema = z.object({
 });
 
 function checkPhone(value: string) {
-  return /^\+?[\d\s()\-]{10,20}$/.test(value) && value.replace(/\D/g, "").length >= 10;
+  return /^[1-9]\d(?:9\d{8}|\d{8})$/.test(value.replace(/\D/g, ""));
+}
+
+const brazilianStates = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"] as const;
+const stateSchema = z.enum(brazilianStates);
+const municipalityCache = new Map<string, { normalized: Set<string>; names: string[] }>();
+
+function normalizePlaceName(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase("pt-BR");
+}
+
+async function getBrazilianMunicipalities(state: (typeof brazilianStates)[number]) {
+  let municipalities = municipalityCache.get(state);
+  if (!municipalities) {
+    let response: Response;
+    try {
+      response = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${state}/municipios`, { signal: AbortSignal.timeout(8000) });
+    } catch {
+      throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Não foi possível validar a cidade agora. Tente novamente." });
+    }
+    if (!response.ok) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Não foi possível validar a cidade agora. Tente novamente." });
+    const records = (await response.json()) as Array<{ nome?: string }>;
+    const names = records.map(record => (record.nome || "").trim()).filter(Boolean).sort((left, right) => left.localeCompare(right, "pt-BR"));
+    municipalities = { names, normalized: new Set(names.map(normalizePlaceName)) };
+    municipalityCache.set(state, municipalities);
+  }
+  return municipalities;
+}
+
+async function validateBrazilianCity(city: string, state: (typeof brazilianStates)[number]) {
+  const municipalities = await getBrazilianMunicipalities(state);
+  return municipalities.normalized.has(normalizePlaceName(city));
 }
 
 function toNumber(value: string | number) {
@@ -71,7 +103,7 @@ export const appRouter = router({
         if (!user || !verifyPassword(input.password, user.passwordHash)) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Usuário ou senha inválidos." });
         }
-        await createUserSession(ctx.res, user.id);
+        await createUserSession(ctx.req, ctx.res, user.id);
         return sanitizeUser(user);
       }),
     logout: publicProcedure.mutation(async ({ ctx }) => {
@@ -87,20 +119,16 @@ export const appRouter = router({
   }),
   estimates: router({
     list: protectedProcedure
-      .input(z.object({ search: z.string().trim().max(160).optional(), from: z.string().datetime().optional(), to: z.string().datetime().optional() }))
+      .input(z.object({ quoteNumber: z.number().int().positive().optional() }))
       .query(async ({ input }) => {
-        const data = await listEstimates({
-          search: input.search || undefined,
-          from: input.from ? new Date(input.from) : undefined,
-          to: input.to ? new Date(input.to) : undefined,
-        });
-        return data.map(estimate => ({ ...estimate, subtotal: toNumber(estimate.subtotal), total: toNumber(estimate.total) }));
+        const data = await listEstimates({ quoteNumber: input.quoteNumber });
+        return data.map(estimate => ({ ...estimate, quoteNumber: formatEstimateNumber(estimate.id), subtotal: toNumber(estimate.subtotal), total: toNumber(estimate.total) }));
       }),
     get: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {
       const result = await getEstimateWithItems(input.id);
       if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Orçamento não encontrado." });
       return {
-        estimate: { ...result.estimate, subtotal: toNumber(result.estimate.subtotal), total: toNumber(result.estimate.total) },
+        estimate: { ...result.estimate, quoteNumber: formatEstimateNumber(result.estimate.id), subtotal: toNumber(result.estimate.subtotal), total: toNumber(result.estimate.total) },
         items: result.items.map(item => ({ ...item, unitPrice: toNumber(item.unitPrice), lineTotal: toNumber(item.lineTotal) })),
       };
     }),
@@ -108,9 +136,12 @@ export const appRouter = router({
       .input(
         z.object({
           customerName: z.string().trim().min(3, "Informe o nome completo.").max(160),
-          customerPhone: z.string().trim().refine(checkPhone, "Informe um telefone válido."),
-          customerAddress: z.string().trim().min(8, "Informe o endereço completo.").max(1000),
+          customerPhone: z.string().trim().refine(checkPhone, "Informe um telefone brasileiro válido."),
+          customerAddress: z.string().trim().min(8, "Informe rua, número e bairro.").max(1000),
+          customerCity: z.string().trim().min(2, "Informe a cidade.").max(160),
+          customerState: stateSchema,
           scheduledAt: z.string().datetime(),
+          expectedTotal: z.number().finite().nonnegative(),
           items: z.array(quoteItemSchema).min(1, "Adicione ao menos um item ao orçamento."),
         })
       )
@@ -144,11 +175,19 @@ export const appRouter = router({
         }
 
         const total = calculatedItems.reduce((sum, item) => sum + item.lineTotal, 0);
+        if (Math.abs(total - input.expectedTotal) > 0.001) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "O total do orçamento foi alterado. Revise os itens antes de enviar." });
+        }
+        if (!(await validateBrazilianCity(input.customerCity, input.customerState))) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "A cidade informada não pertence à UF selecionada." });
+        }
         const scheduledAt = new Date(input.scheduledAt);
         const inserted = await db.insert(estimates).values({
           customerName: input.customerName,
           customerPhone: input.customerPhone,
           customerAddress: input.customerAddress,
+          customerCity: input.customerCity,
+          customerState: input.customerState,
           scheduledAt,
           subtotal: total.toFixed(2),
           total: total.toFixed(2),
@@ -174,27 +213,44 @@ export const appRouter = router({
           }))
         );
 
+        const persisted = await getEstimateWithItems(estimateId);
+        if (!persisted) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível concluir o orçamento." });
+        const persistedTotal = toNumber(persisted.estimate.total);
+        const quoteNumber = formatEstimateNumber(persisted.estimate.id);
         const message = buildWhatsAppMessage({
-          estimateId,
-          customerName: input.customerName,
-          customerPhone: input.customerPhone,
-          customerAddress: input.customerAddress,
-          scheduledAt,
-          total,
-          items: calculatedItems.map(item => ({
-            productName: item.rule.productName,
-            places: item.rule.places,
-            itemType: item.rule.itemType,
-            fabric: item.rule.fabric,
+          quoteNumber,
+          customerName: persisted.estimate.customerName,
+          customerPhone: persisted.estimate.customerPhone,
+          customerAddress: persisted.estimate.customerAddress,
+          customerCity: persisted.estimate.customerCity,
+          customerState: persisted.estimate.customerState,
+          scheduledAt: persisted.estimate.scheduledAt,
+          total: persistedTotal,
+          items: persisted.items.map(item => ({
+            productName: item.productName,
+            places: item.places,
+            itemType: item.itemType,
+            fabric: item.fabric,
             dirtLevel: item.dirtLevel,
             service: item.service,
             quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            lineTotal: item.lineTotal,
+            unitPrice: toNumber(item.unitPrice),
+            lineTotal: toNumber(item.lineTotal),
           })),
         });
-        return { estimateId, message };
+        return { estimateId, quoteNumber, total: persistedTotal, message };
       }),
+  }),
+  address: router({
+    municipalities: protectedProcedure.input(z.object({ state: stateSchema })).query(async ({ input }) => {
+      const municipalities = await getBrazilianMunicipalities(input.state);
+      return municipalities.names;
+    }),
+    validateCity: protectedProcedure.input(z.object({ city: z.string().trim().min(2).max(160), state: stateSchema })).mutation(async ({ input }) => {
+      const valid = await validateBrazilianCity(input.city, input.state);
+      if (!valid) throw new TRPCError({ code: "BAD_REQUEST", message: "A cidade informada não pertence à UF selecionada." });
+      return { valid: true } as const;
+    }),
   }),
   admin: router({
     priceList: adminProcedure.query(async () => {

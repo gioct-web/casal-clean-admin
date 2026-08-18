@@ -21,3 +21,14 @@
 - [x] Validar visualmente os fluxos autenticados principais em desktop, tablet e celular, incluindo catálogo, especificações, quantidade, resumo, histórico e administração.
 - [x] Adicionar testes Vitest isolados para nome obrigatório, endereço obrigatório, telefone inválido, data/hora inválida e ausência de itens na finalização.
 - [x] Verificar os fluxos autenticados de catálogo, orçamento, histórico e administração em viewport de tablet e celular.
+- [x] Corrigir a persistência de autenticação e a navegação entre telas em celular, tablet, desktop e telas amplas, mantendo o fluxo atual.
+- [x] Atribuir e exibir número único e pesquisável em cada orçamento, com busca rápida por número no histórico sem filtro de data.
+- [x] Garantir que a mensagem do WhatsApp seja serializada apenas a partir do orçamento final salvo, incluindo número, itens, especificações, quantidades, valores unitários, subtotais e total idênticos à tela.
+- [x] Aplicar máscara e validação estrita de telefone brasileiro antes da finalização do orçamento.
+- [x] Validar endereço com cidade e UF reconhecidas e auxiliar o preenchimento sem aceitar combinações inconsistentes ou campos incompletos.
+- [x] Testar login, navegação, busca por número, cálculo, mensagem de WhatsApp e validações de telefone/endereço nos formatos de celular, tablet e desktop.
+- [x] Implementar preenchimento assistido de cidade por UF, com sugestões de municípios válidos antes da finalização.
+- [x] Validar login, persistência de sessão e navegação autenticada em celular, tablet, desktop e tela ampla após as correções.
+- [x] Executar e registrar, por formato de tela, buscas por número, cálculo, validações de telefone/endereço e abertura do link de WhatsApp derivado do orçamento salvo.
+- [x] Validar login e persistência de sessão em celular, tablet, desktop e tela ampla, com evidência específica por formato.
+- [x] Executar em celular, tablet, desktop e tela ampla a busca por número, a conferência de cálculo, as rejeições de telefone/endereço e a abertura do link wa.me do orçamento salvo, registrando os resultados.

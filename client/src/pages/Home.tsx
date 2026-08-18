@@ -67,8 +67,14 @@ type CustomerData = {
   customerName: string;
   customerPhone: string;
   customerAddress: string;
+  customerCity: string;
+  customerState: BrazilianState | "";
   scheduledAt: string;
 };
+
+type BrazilianState = "AC" | "AL" | "AP" | "AM" | "BA" | "CE" | "DF" | "ES" | "GO" | "MA" | "MT" | "MS" | "MG" | "PA" | "PB" | "PR" | "PE" | "PI" | "RJ" | "RN" | "RS" | "RO" | "RR" | "SC" | "SP" | "SE" | "TO";
+
+const brazilianStates: BrazilianState[] = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"];
 
 const products = [
   { key: "sofa", name: "Sofá", icon: Sofa },
@@ -82,8 +88,18 @@ const CUSTOMER_DEFAULT: CustomerData = {
   customerName: "",
   customerPhone: "",
   customerAddress: "",
+  customerCity: "",
+  customerState: "",
   scheduledAt: "",
 };
+
+function formatPhoneInput(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 2) return digits ? `(${digits}` : "";
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
 
 function getStorageValue<T>(key: string, fallback: T): T {
   try {
@@ -157,11 +173,11 @@ function Header({ user, onLogout, onNavigate }: { user: { name: string | null; r
   );
 }
 
-function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
+function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: { id: number; username: string | null; name: string | null; role: "admin" | "user" }) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const login = trpc.auth.login.useMutation({
-    onSuccess: () => onLoggedIn(),
+    onSuccess: user => onLoggedIn(user),
     onError: error => toast.error(error.message),
   });
   const handleSubmit = (event: FormEvent) => {
@@ -275,42 +291,62 @@ function QuoteSummary({ items, onBack, onRemove, onFinalize }: { items: CartItem
   );
 }
 
-function CustomerScreen({ items, customer, setCustomer, onBack, onComplete }: { items: CartItem[]; customer: CustomerData; setCustomer: (data: CustomerData) => void; onBack: () => void; onComplete: (data: CustomerData) => void }) {
+function CustomerScreen({ items, customer, setCustomer, onBack, onComplete }: { items: CartItem[]; customer: CustomerData; setCustomer: (data: CustomerData) => void; onBack: () => void; onComplete: (data: CustomerData, whatsappWindow: Window | null) => void }) {
   const [errors, setErrors] = useState<Partial<Record<keyof CustomerData, string>>>({});
+  const validateCity = trpc.address.validateCity.useMutation();
+  const municipalities = trpc.address.municipalities.useQuery({ state: (customer.customerState || "SP") as BrazilianState }, { enabled: Boolean(customer.customerState), staleTime: 1000 * 60 * 60 });
   const update = (key: keyof CustomerData, value: string) => setCustomer({ ...customer, [key]: value });
-  const submit = () => {
+  const municipalitySuggestions = useMemo(() => {
+    const typed = customer.customerCity.trim().toLocaleLowerCase("pt-BR");
+    return (municipalities.data || []).filter(city => !typed || city.toLocaleLowerCase("pt-BR").includes(typed)).slice(0, 30);
+  }, [customer.customerCity, municipalities.data]);
+  const changeState = (value: string) => {
+    setCustomer({ ...customer, customerState: value as CustomerData["customerState"], customerCity: "" });
+    setErrors(current => ({ ...current, customerState: undefined, customerCity: undefined }));
+  };
+  const submit = async () => {
     const next: Partial<Record<keyof CustomerData, string>> = {};
     if (customer.customerName.trim().length < 3) next.customerName = "Informe o nome completo.";
-    if (customer.customerPhone.replace(/\D/g, "").length < 10) next.customerPhone = "Informe um telefone válido.";
-    if (customer.customerAddress.trim().length < 8) next.customerAddress = "Informe o endereço completo.";
-    if (!customer.scheduledAt) next.scheduledAt = "Selecione a data e o horário do serviço.";
+    if (!/^[1-9]\d(?:9\d{8}|\d{8})$/.test(customer.customerPhone.replace(/\D/g, ""))) next.customerPhone = "Informe um telefone brasileiro válido com DDD.";
+    if (customer.customerAddress.trim().length < 8 || !/\d/.test(customer.customerAddress)) next.customerAddress = "Informe rua, número e bairro.";
+    if (customer.customerCity.trim().length < 2) next.customerCity = "Informe a cidade.";
+    if (!customer.customerState) next.customerState = "Selecione a UF.";
+    if (!customer.scheduledAt || Number.isNaN(new Date(customer.scheduledAt).getTime())) next.scheduledAt = "Selecione uma data e um horário válidos.";
     setErrors(next);
-    if (!Object.keys(next).length) onComplete(customer);
+    if (Object.keys(next).length) return;
+    const whatsappWindow = window.open("about:blank", "_blank");
+    try {
+      await validateCity.mutateAsync({ city: customer.customerCity.trim(), state: customer.customerState as BrazilianState });
+      onComplete(customer, whatsappWindow);
+    } catch (error) {
+      whatsappWindow?.close();
+      setErrors(current => ({ ...current, customerCity: error instanceof Error ? error.message : "Não foi possível validar a cidade." }));
+    }
   };
   return (
     <div className="flow-area">
       <div className="flex items-center gap-3"><button className="back-button" onClick={onBack} aria-label="Voltar"><ArrowLeft size={18} /></button><h1 className="section-heading no-after !mb-0">Seus dados</h1></div>
       <div className="form-card mt-5">
         <div className="field-group"><label className="label" htmlFor="customerName">Seu nome *</label><div className="input-shell"><UserRound className="input-icon" /><input id="customerName" className="text-input" placeholder="Nome completo" value={customer.customerName} onChange={event => update("customerName", event.target.value)} /></div>{errors.customerName && <p className="field-error">{errors.customerName}</p>}</div>
-        <div className="field-group"><label className="label" htmlFor="customerPhone">Seu telefone *</label><div className="input-shell"><Phone className="input-icon" /><input id="customerPhone" className="text-input" inputMode="tel" placeholder="(11) 99999-9999" value={customer.customerPhone} onChange={event => update("customerPhone", event.target.value)} /></div>{errors.customerPhone && <p className="field-error">{errors.customerPhone}</p>}</div>
-        <div className="field-group"><label className="label" htmlFor="customerAddress">Endereço *</label><textarea id="customerAddress" className="textarea-input" placeholder="Rua, número, bairro, cidade" value={customer.customerAddress} onChange={event => update("customerAddress", event.target.value)} />{errors.customerAddress && <p className="field-error">{errors.customerAddress}</p>}</div>
+        <div className="field-group"><label className="label" htmlFor="customerPhone">Seu telefone *</label><div className="input-shell"><Phone className="input-icon" /><input id="customerPhone" className="text-input" inputMode="tel" placeholder="(11) 99999-9999" value={customer.customerPhone} onChange={event => update("customerPhone", formatPhoneInput(event.target.value))} /></div>{errors.customerPhone && <p className="field-error">{errors.customerPhone}</p>}</div>
+        <div className="field-group"><label className="label" htmlFor="customerAddress">Endereço *</label><textarea id="customerAddress" className="textarea-input" placeholder="Rua, número e bairro" value={customer.customerAddress} onChange={event => update("customerAddress", event.target.value)} />{errors.customerAddress && <p className="field-error">{errors.customerAddress}</p>}</div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_110px]"><div className="field-group"><label className="label" htmlFor="customerCity">Cidade *</label><input id="customerCity" className="text-input" list="municipality-suggestions" autoComplete="address-level2" disabled={!customer.customerState} placeholder={customer.customerState ? "Digite ou selecione uma cidade" : "Selecione a UF primeiro"} value={customer.customerCity} onChange={event => update("customerCity", event.target.value)} /><datalist id="municipality-suggestions">{municipalitySuggestions.map(city => <option key={city} value={city} />)}</datalist>{customer.customerState && <p className="mt-1 text-[10px] text-[#aaa6a1]">{municipalities.isLoading ? "Carregando cidades..." : "Sugestões oficiais conforme a UF selecionada."}</p>}{errors.customerCity && <p className="field-error">{errors.customerCity}</p>}</div><div className="field-group"><label className="label" htmlFor="customerState">UF *</label><select id="customerState" className="select-input" value={customer.customerState} onChange={event => changeState(event.target.value)}><option value="">UF</option>{brazilianStates.map(state => <option key={state} value={state}>{state}</option>)}</select>{errors.customerState && <p className="field-error">{errors.customerState}</p>}</div></div>
         <div className="field-group"><label className="label" htmlFor="scheduledAt">Data e horário do serviço *</label><div className="input-shell"><CalendarDays className="input-icon" /><input id="scheduledAt" className="text-input" type="datetime-local" value={customer.scheduledAt} onChange={event => update("scheduledAt", event.target.value)} /></div>{errors.scheduledAt && <p className="field-error">{errors.scheduledAt}</p>}</div>
         <div className="contact-card p-4 text-[11px] leading-6 text-[#b5b0ab]"><div className="flex items-center gap-2 text-[#D4A843]"><Phone size={14} />(11) 97685-7410</div><div>atendimento.casalclean@gmail.com</div></div>
       </div>
-      <button className="whatsapp-button mt-5" disabled={!items.length} onClick={submit}><Phone size={19} />Enviar orçamento</button>
+      <button className="whatsapp-button mt-5" disabled={!items.length || validateCity.isPending} onClick={submit}>{validateCity.isPending ? <Loader2 className="animate-spin" size={19} /> : <Phone size={19} />}Enviar orçamento</button>
     </div>
   );
 }
 
 function HistoryScreen({ onBack, onReopen }: { onBack: () => void; onReopen: (id: number) => void }) {
   const [search, setSearch] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const data = trpc.estimates.list.useQuery({ search: search || undefined, from: from ? new Date(`${from}T00:00:00`).toISOString() : undefined, to: to ? new Date(`${to}T23:59:59`).toISOString() : undefined });
+  const quoteNumber = Number(search.replace(/\D/g, "")) || undefined;
+  const data = trpc.estimates.list.useQuery({ quoteNumber });
   return (
     <div>
       <div className="flex items-center gap-3"><button className="back-button" onClick={onBack} aria-label="Voltar"><ArrowLeft size={18} /></button><h1 className="section-heading no-after !mb-0">Histórico de orçamentos</h1></div>
-      <div className="history-card mt-5"><div className="history-topbar"><div className="input-shell"><Search className="input-icon" /><input className="text-input" placeholder="Buscar cliente ou telefone" value={search} onChange={event => setSearch(event.target.value)} /></div><input className="text-input" type="date" value={from} onChange={event => setFrom(event.target.value)} /><input className="text-input" type="date" value={to} onChange={event => setTo(event.target.value)} /></div>{data.isLoading ? <div className="empty-state"><Loader2 className="mx-auto mb-2 animate-spin" />Carregando histórico...</div> : !data.data?.length ? <div className="empty-state">Nenhum orçamento encontrado.</div> : <div className="table-scroll"><table className="data-table"><thead><tr><th>#</th><th>Cliente</th><th>Agendamento</th><th>Total</th><th></th></tr></thead><tbody>{data.data.map(estimate => <tr key={estimate.id}><td>#{estimate.id}</td><td><strong>{estimate.customerName}</strong><br /><span className="text-[#aaa6a1]">{estimate.customerPhone}</span></td><td>{new Date(estimate.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</td><td className="table-money">{formatCurrency(estimate.total)}</td><td><button className="table-button" onClick={() => onReopen(estimate.id)}>Reabrir</button></td></tr>)}</tbody></table></div>}</div>
+      <div className="history-card mt-5"><div className="history-topbar"><div className="input-shell"><Search className="input-icon" /><input className="text-input" inputMode="numeric" placeholder="Buscar por número do orçamento" value={search} onChange={event => setSearch(event.target.value)} /></div></div>{data.isLoading ? <div className="empty-state"><Loader2 className="mx-auto mb-2 animate-spin" />Carregando histórico...</div> : !data.data?.length ? <div className="empty-state">Nenhum orçamento encontrado.</div> : <div className="table-scroll"><table className="data-table"><thead><tr><th>#</th><th>Cliente</th><th>Agendamento</th><th>Total</th><th></th></tr></thead><tbody>{data.data.map(estimate => <tr key={estimate.id}><td>{estimate.quoteNumber}</td><td><strong>{estimate.customerName}</strong><br /><span className="text-[#aaa6a1]">{estimate.customerPhone}</span></td><td>{new Date(estimate.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</td><td className="table-money">{formatCurrency(estimate.total)}</td><td><button className="table-button" onClick={() => onReopen(estimate.id)}>Reabrir</button></td></tr>)}</tbody></table></div>}</div>
     </div>
   );
 }
@@ -363,15 +399,7 @@ export default function Home() {
   const [cart, setCart] = useSessionValue<CartItem[]>("casal-clean-cart", []);
   const [draft, setDraft] = useSessionValue<QuoteDraft | null>("casal-clean-draft", null);
   const [customer, setCustomer] = useSessionValue<CustomerData>("casal-clean-customer", CUSTOMER_DEFAULT);
-  const saveEstimate = trpc.estimates.save.useMutation({
-    onSuccess: result => {
-      const number = "5511976857410";
-      window.open(`https://wa.me/${number}?text=${encodeURIComponent(result.message)}`, "_blank", "noopener,noreferrer");
-      toast.success(`Orçamento #${result.estimateId} salvo e enviado para o WhatsApp.`);
-      setCart([]); setDraft(null); setCustomer(CUSTOMER_DEFAULT); setLocation("/historico");
-    },
-    onError: error => toast.error(error.message),
-  });
+  const saveEstimate = trpc.estimates.save.useMutation();
   const logout = trpc.auth.logout.useMutation({ onSuccess: () => { setCart([]); setDraft(null); setCustomer(CUSTOMER_DEFAULT); utils.auth.me.setData(undefined, null); setLocation("/"); toast.success("Sessão encerrada."); } });
 
   const navigate = (path: string) => setLocation(path);
@@ -397,12 +425,39 @@ export default function Home() {
         lineTotal: item.lineTotal,
       }));
       setCart(reopened);
-      setCustomer({ customerName: data.estimate.customerName, customerPhone: data.estimate.customerPhone, customerAddress: data.estimate.customerAddress, scheduledAt: new Date(data.estimate.scheduledAt).toISOString().slice(0, 16) });
+      setCustomer({ customerName: data.estimate.customerName, customerPhone: formatPhoneInput(data.estimate.customerPhone), customerAddress: data.estimate.customerAddress, customerCity: data.estimate.customerCity || "", customerState: (data.estimate.customerState as BrazilianState | null) || "", scheduledAt: new Date(data.estimate.scheduledAt).toISOString().slice(0, 16) });
       toast.success("Orçamento reaberto para edição.");
       navigate("/orcamento");
     } catch {
       toast.error("Não foi possível reabrir este orçamento.");
     }
+  };
+
+  const finishEstimate = (data: CustomerData, whatsappWindow: Window | null) => {
+    saveEstimate.mutate({
+      ...data,
+      customerState: data.customerState as BrazilianState,
+      scheduledAt: new Date(data.scheduledAt).toISOString(),
+      expectedTotal: cart.reduce((sum, item) => sum + item.lineTotal, 0),
+      items: cart.map(item => ({ pricingRuleId: item.pricingRuleId, dirtLevel: item.dirtLevel, service: item.service, quantity: item.quantity })),
+    }, {
+      onSuccess: result => {
+        const number = "5511976857410";
+        const whatsappUrl = `https://wa.me/${number}?text=${encodeURIComponent(result.message)}`;
+        if (whatsappWindow && !whatsappWindow.closed) {
+          whatsappWindow.location.assign(whatsappUrl);
+          try { whatsappWindow.opener = null; } catch { /* O navegador pode impedir a alteração da referência. */ }
+        } else {
+          window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+        }
+        toast.success(`Orçamento ${result.quoteNumber} salvo e encaminhado ao WhatsApp.`);
+        setCart([]); setDraft(null); setCustomer(CUSTOMER_DEFAULT); setLocation("/historico");
+      },
+      onError: error => {
+        whatsappWindow?.close();
+        toast.error(error.message);
+      },
+    });
   };
 
   if (auth.isLoading) return <div className="login-screen"><Loader2 className="animate-spin text-[#D4A843]" size={32} /></div>;
@@ -416,7 +471,7 @@ export default function Home() {
     if (currentProduct) return <ProductSpecifications productKey={currentProduct} rules={rules} onBack={returnToCatalog} onContinue={nextDraft => { setDraft(nextDraft); navigate("/quantidade"); }} />;
     if (location === "/quantidade") return <QuantityScreen draft={draft} onBack={() => draft ? navigate(`/produto/${draft.productKey}`) : returnToCatalog()} onAdd={item => { setCart([...cart, item]); setDraft(null); toast.success("Item adicionado ao orçamento."); navigate("/orcamento"); }} />;
     if (location === "/orcamento") return <QuoteSummary items={cart} onBack={returnToCatalog} onRemove={cartId => { setCart(cart.filter(item => item.cartId !== cartId)); toast.success("Item removido."); }} onFinalize={() => navigate("/cliente")} />;
-    if (location === "/cliente") return <CustomerScreen items={cart} customer={customer} setCustomer={setCustomer} onBack={() => navigate("/orcamento")} onComplete={data => saveEstimate.mutate({ ...data, scheduledAt: new Date(data.scheduledAt).toISOString(), items: cart.map(item => ({ pricingRuleId: item.pricingRuleId, dirtLevel: item.dirtLevel, service: item.service, quantity: item.quantity })) })} />;
+    if (location === "/cliente") return <CustomerScreen items={cart} customer={customer} setCustomer={setCustomer} onBack={() => navigate("/orcamento")} onComplete={finishEstimate} />;
     if (location === "/historico") return <HistoryScreen onBack={returnToCatalog} onReopen={reopen} />;
     if (location === "/admin") return user.role === "admin" ? <AdminScreen onBack={returnToCatalog} /> : <RestrictedPage onBack={returnToCatalog} />;
     return <ProductCatalog rules={rules} onSelect={key => navigate(`/produto/${key}`)} />;

@@ -15,6 +15,13 @@
       "when": 1787009615715,
       "tag": "0001_clammy_blue_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787013036539,
+      "tag": "0002_good_nico_minoru",
+      "breakpoints": true
     }
   ]
 }

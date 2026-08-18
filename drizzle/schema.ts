@@ -66,6 +66,8 @@ export const estimates = mysqlTable(
     customerName: varchar("customerName", { length: 160 }).notNull(),
     customerPhone: varchar("customerPhone", { length: 32 }).notNull(),
     customerAddress: text("customerAddress").notNull(),
+    customerCity: varchar("customerCity", { length: 160 }),
+    customerState: varchar("customerState", { length: 2 }),
     scheduledAt: timestamp("scheduledAt").notNull(),
     subtotal: decimal("subtotal", { precision: 12, scale: 2 }).notNull(),
     total: decimal("total", { precision: 12, scale: 2 }).notNull(),
@@ -76,6 +78,7 @@ export const estimates = mysqlTable(
   },
   table => [
     index("estimates_customer_idx").on(table.customerName),
+    index("estimates_identifier_idx").on(table.id),
     index("estimates_schedule_idx").on(table.scheduledAt),
     index("estimates_creator_idx").on(table.createdByUserId),
   ]

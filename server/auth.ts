@@ -26,22 +26,24 @@ function getTokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-function getCookieOptions() {
+function getCookieOptions(req: Request) {
+  const forwardedProtocol = req.headers["x-forwarded-proto"];
+  const isHttps = req.protocol === "https" || forwardedProtocol === "https";
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" || isHttps,
     sameSite: "lax" as const,
     path: "/",
   };
 }
 
-export async function createUserSession(res: Response, userId: number) {
+export async function createUserSession(req: Request, res: Response, userId: number) {
   const token = randomBytes(48).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
   await createSessionRecord(getTokenHash(token), userId, expiresAt);
   await touchUserSignIn(userId);
   res.cookie(APP_SESSION_COOKIE, token, {
-    ...getCookieOptions(),
+    ...getCookieOptions(req),
     maxAge: SESSION_DURATION_MS,
   });
 }
@@ -49,7 +51,7 @@ export async function createUserSession(res: Response, userId: number) {
 export async function clearUserSession(req: Request, res: Response) {
   const token = parseCookieHeader(req.headers.cookie ?? "")[APP_SESSION_COOKIE];
   if (token) await removeSessionRecord(getTokenHash(token));
-  res.clearCookie(APP_SESSION_COOKIE, getCookieOptions());
+  res.clearCookie(APP_SESSION_COOKIE, getCookieOptions(req));
 }
 
 export async function getAuthenticatedUser(req: Request): Promise<User | null> {

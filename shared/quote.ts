@@ -30,6 +30,10 @@ export function formatCurrency(value: number) {
   }).format(value);
 }
 
+export function formatEstimateNumber(estimateId: number) {
+  return `#${String(estimateId).padStart(6, "0")}`;
+}
+
 export function normalizePhone(phone: string) {
   return phone.replace(/\D/g, "");
 }
@@ -47,10 +51,12 @@ export type WhatsAppEstimateItem = {
 };
 
 export function buildWhatsAppMessage(data: {
-  estimateId: number;
+  quoteNumber: string;
   customerName: string;
   customerPhone: string;
   customerAddress: string;
+  customerCity: string | null;
+  customerState: string | null;
   scheduledAt: Date;
   items: WhatsAppEstimateItem[];
   total: number;
@@ -70,12 +76,12 @@ export function buildWhatsAppMessage(data: {
 
   return [
     "*CASAL CLEAN — ORÇAMENTO*",
-    `Orçamento #${data.estimateId}`,
+    `Orçamento ${data.quoteNumber}`,
     "",
     "*Cliente*",
     `Nome: ${data.customerName}`,
     `Telefone: ${data.customerPhone}`,
-    `Endereço: ${data.customerAddress}`,
+    `Endereço: ${[data.customerAddress, data.customerCity, data.customerState].filter(Boolean).join(" — ")}`,
     `Agendamento: ${schedule}`,
     "",
     "*Itens*",
