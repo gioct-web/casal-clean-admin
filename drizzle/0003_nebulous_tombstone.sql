@@ -1,0 +1,1 @@
+ALTER TABLE `estimate_items` MODIFY COLUMN `service` enum('lavagem','impermeabilizacao','lavagem_impermeabilizacao') NOT NULL;

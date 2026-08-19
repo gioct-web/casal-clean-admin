@@ -10,9 +10,16 @@ export const dirtLevelInfo: Record<DirtLevel, { label: string; surcharge: number
 export const serviceInfo = {
   lavagem: { label: "Lavagem" },
   impermeabilizacao: { label: "Impermeabilização" },
+  lavagem_impermeabilizacao: { label: "Lavagem + Impermeabilização" },
 } as const;
 
 export type ServiceType = keyof typeof serviceInfo;
+
+export function calculateServiceBasePrice(washPrice: number, waterproofPrice: number, service: ServiceType) {
+  if (service === "lavagem") return washPrice;
+  if (service === "impermeabilizacao") return waterproofPrice;
+  return washPrice + waterproofPrice;
+}
 
 export function calculateUnitPrice(basePrice: number, dirtLevel: DirtLevel) {
   const multiplier = 1 + dirtLevelInfo[dirtLevel].surcharge / 100;

@@ -97,7 +97,7 @@ export const estimateItems = mysqlTable(
     fabric: varchar("fabric", { length: 64 }).notNull(),
     dirtLevel: mysqlEnum("dirtLevel", ["leve", "medio", "pesado"]).notNull(),
     dirtSurcharge: int("dirtSurcharge").notNull(),
-    service: mysqlEnum("service", ["lavagem", "impermeabilizacao"]).notNull(),
+    service: mysqlEnum("service", ["lavagem", "impermeabilizacao", "lavagem_impermeabilizacao"]).notNull(),
     quantity: int("quantity").notNull(),
     unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).notNull(),
     lineTotal: decimal("lineTotal", { precision: 12, scale: 2 }).notNull(),

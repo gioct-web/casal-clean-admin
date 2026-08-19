@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { dirtLevelInfo, formatCurrency, calculateLineTotal, calculateUnitPrice, type DirtLevel, type ServiceType } from "@shared/quote";
+import { dirtLevelInfo, formatCurrency, calculateLineTotal, calculateServiceBasePrice, calculateUnitPrice, serviceInfo, type DirtLevel, type ServiceType } from "@shared/quote";
 import {
   Armchair,
   ArrowLeft,
@@ -126,6 +126,17 @@ function cleanLabel(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function toggleServiceSelection(current: ServiceType, option: "lavagem" | "impermeabilizacao"): ServiceType {
+  if (option === "lavagem") {
+    if (current === "impermeabilizacao") return "lavagem_impermeabilizacao";
+    if (current === "lavagem_impermeabilizacao") return "impermeabilizacao";
+    return "lavagem";
+  }
+  if (current === "lavagem") return "lavagem_impermeabilizacao";
+  if (current === "lavagem_impermeabilizacao") return "lavagem";
+  return "impermeabilizacao";
+}
+
 function AppBrand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`brand ${compact ? "login-brand" : ""}`}>
@@ -245,7 +256,7 @@ function ProductSpecifications({ productKey, rules, onBack, onContinue }: { prod
   useEffect(() => { if (fabricOptions.length && !fabricOptions.includes(fabric)) setFabric(fabricOptions[0]); }, [fabricOptions.join("|"), fabric]);
 
   if (!selectedRule) return <div className="empty-state">Não há configurações disponíveis para este produto.</div>;
-  const basePrice = service === "lavagem" ? selectedRule.washPrice : selectedRule.waterproofPrice;
+  const basePrice = calculateServiceBasePrice(selectedRule.washPrice, selectedRule.waterproofPrice, service);
   const finalPrice = calculateUnitPrice(basePrice, dirtLevel);
   return (
     <div className="flow-area">
@@ -255,9 +266,9 @@ function ProductSpecifications({ productKey, rules, onBack, onContinue }: { prod
         <div className="field-group"><span className="label">Tipo</span><div className="choice-row">{typeOptions.map(option => { const price = Math.min(...productRules.filter(rule => rule.places === places && rule.itemType === option).flatMap(rule => [rule.washPrice, rule.waterproofPrice])); return <button key={option} className={`choice-button ${itemType === option ? "active" : ""}`} onClick={() => setItemType(option)}>{cleanLabel(option)}<small>{formatCurrency(price)}</small></button>; })}</div></div>
         <div className="field-group"><span className="label">Tecido</span><div className="choice-row">{fabricOptions.map(option => { const price = Math.min(...productRules.filter(rule => rule.places === places && rule.itemType === itemType && rule.fabric === option).flatMap(rule => [rule.washPrice, rule.waterproofPrice])); return <button key={option} className={`choice-button ${fabric === option ? "active" : ""}`} onClick={() => setFabric(option)}>{cleanLabel(option)}<small>{formatCurrency(price)}</small></button>; })}</div></div>
         <div className="field-group"><span className="label">Nível de sujeira</span>{(["leve", "medio", "pesado"] as DirtLevel[]).map(level => <button key={level} className={`dirt-choice ${dirtLevel === level ? "active" : ""}`} onClick={() => setDirtLevel(level)}><span><span className="choice-title block">{dirtLevelInfo[level].label}</span><span className="choice-subtitle block">{dirtLevelInfo[level].description}</span></span><span className="choice-price">{dirtLevelInfo[level].surcharge ? `+${dirtLevelInfo[level].surcharge}%` : "Sem acréscimo"}</span></button>)}</div>
-        <div className="field-group"><span className="label">Serviço</span>{(["lavagem", "impermeabilizacao"] as ServiceType[]).map(option => { const price = option === "lavagem" ? selectedRule.washPrice : selectedRule.waterproofPrice; return <button key={option} className={`service-choice ${service === option ? "active" : ""}`} onClick={() => setService(option)}><span><span className="choice-title block">{option === "lavagem" ? "Lavagem" : "Impermeabilização"}</span><span className="choice-subtitle block">Preço por unidade conforme tabela</span></span><span className="choice-price">{formatCurrency(price)}</span></button>; })}</div>
+        <div className="field-group"><span className="label">Serviço</span>{(["lavagem", "impermeabilizacao"] as const).map(option => { const price = option === "lavagem" ? selectedRule.washPrice : selectedRule.waterproofPrice; const selected = service === option || service === "lavagem_impermeabilizacao"; return <button key={option} className={`service-choice ${selected ? "active" : ""}`} onClick={() => setService(current => toggleServiceSelection(current, option))}><span><span className="choice-title block">{option === "lavagem" ? "Lavagem" : "Impermeabilização"}</span><span className="choice-subtitle block">Preço por unidade conforme tabela</span></span><span className="choice-price">{formatCurrency(price)}</span></button>; })}</div>
       </div>
-      <div className="price-preview"><div className="price-preview-label">Valor unitário com sujeira</div><div className="price-preview-value">{formatCurrency(finalPrice)}</div><div className="price-preview-caption">{service === "lavagem" ? "Lavagem" : "Impermeabilização"} · {dirtLevelInfo[dirtLevel].label}</div></div>
+      <div className="price-preview"><div className="price-preview-label">Valor unitário com sujeira</div><div className="price-preview-value">{formatCurrency(finalPrice)}</div><div className="price-preview-caption">{serviceInfo[service].label} · {dirtLevelInfo[dirtLevel].label}</div></div>
       <button className="primary-button" onClick={() => onContinue({ pricingRuleId: selectedRule.id, productKey: selectedRule.productKey, productName: selectedRule.productName, places: selectedRule.places, itemType: selectedRule.itemType, fabric: selectedRule.fabric, service, dirtLevel, basePrice })}>Continuar</button>
     </div>
   );
@@ -272,7 +283,7 @@ function QuantityScreen({ draft, onBack, onAdd }: { draft: QuoteDraft | null; on
   return (
     <div className="flow-area">
       <div className="flex items-center gap-3"><button className="back-button" onClick={onBack} aria-label="Voltar"><ArrowLeft size={18} /></button><h1 className="section-heading no-after !mb-0">Quantidade</h1></div>
-      <div className="quantity-card summary-card mt-5"><div className="cart-title text-[16px]">{draft.productName}</div><div className="quantity-details">{draft.places} · {cleanLabel(draft.itemType)} · {cleanLabel(draft.fabric)} · {dirtLevelInfo[draft.dirtLevel].label} · {draft.service === "lavagem" ? "Lavagem" : "Impermeabilização"}</div><div className="stepper"><button className="stepper-button" disabled={quantity === 1} onClick={() => setQuantity(value => Math.max(1, value - 1))}><Minus size={18} /></button><strong className="stepper-value">{quantity}</strong><button className="stepper-button" onClick={() => setQuantity(value => value + 1)}><Plus size={18} /></button></div><div className="price-preview !mb-0"><div className="price-preview-label">Valor total</div><div className="price-preview-value">{formatCurrency(lineTotal)}</div><div className="price-preview-caption">{quantity} un. × {formatCurrency(unitPrice)}</div></div></div>
+      <div className="quantity-card summary-card mt-5"><div className="cart-title text-[16px]">{draft.productName}</div><div className="quantity-details">{draft.places} · {cleanLabel(draft.itemType)} · {cleanLabel(draft.fabric)} · {dirtLevelInfo[draft.dirtLevel].label} · {serviceInfo[draft.service].label}</div><div className="stepper"><button className="stepper-button" disabled={quantity === 1} onClick={() => setQuantity(value => Math.max(1, value - 1))}><Minus size={18} /></button><strong className="stepper-value">{quantity}</strong><button className="stepper-button" onClick={() => setQuantity(value => value + 1)}><Plus size={18} /></button></div><div className="price-preview !mb-0"><div className="price-preview-label">Valor total</div><div className="price-preview-value">{formatCurrency(lineTotal)}</div><div className="price-preview-caption">{quantity} un. × {formatCurrency(unitPrice)}</div></div></div>
       <button className="primary-button mt-5" onClick={() => onAdd({ ...draft, cartId: `${Date.now()}-${Math.random().toString(16).slice(2)}`, quantity, unitPrice, lineTotal })}>Adicionar ao orçamento</button>
     </div>
   );
@@ -284,7 +295,7 @@ function QuoteSummary({ items, onBack, onRemove, onFinalize }: { items: CartItem
     <div className="flow-area">
       <div className="flex items-center gap-3"><button className="back-button" onClick={onBack} aria-label="Voltar"><ArrowLeft size={18} /></button><h1 className="section-heading no-after !mb-0">Seu orçamento</h1></div>
       <div className="summary-card mt-5">
-        {!items.length ? <div className="empty-state">Ainda não há itens neste orçamento.<br /><button className="mt-4 text-[#D4A843] underline" onClick={onBack}>Escolher produto</button></div> : <>{items.map(item => <article className="cart-item" key={item.cartId}><div><div className="cart-title">{item.productName} <span className="font-normal text-[#aba7a2]">× {item.quantity}</span></div><div className="cart-detail">{item.places} · {cleanLabel(item.itemType)} · {cleanLabel(item.fabric)}<br />{dirtLevelInfo[item.dirtLevel].label} · {item.service === "lavagem" ? "Lavagem" : "Impermeabilização"} · {formatCurrency(item.unitPrice)} por un.</div></div><div><div className="cart-price">{formatCurrency(item.lineTotal)}</div><button className="remove-link" onClick={() => onRemove(item.cartId)}>Remover</button></div></article>)}<div className="quote-total"><span className="quote-total-label">Total geral</span><span className="quote-total-value">{formatCurrency(total)}</span></div></>}
+        {!items.length ? <div className="empty-state">Ainda não há itens neste orçamento.<br /><button className="mt-4 text-[#D4A843] underline" onClick={onBack}>Escolher produto</button></div> : <>{items.map(item => <article className="cart-item" key={item.cartId}><div><div className="cart-title">{item.productName} <span className="font-normal text-[#aba7a2]">× {item.quantity}</span></div><div className="cart-detail">{item.places} · {cleanLabel(item.itemType)} · {cleanLabel(item.fabric)}<br />{dirtLevelInfo[item.dirtLevel].label} · {serviceInfo[item.service].label} · {formatCurrency(item.unitPrice)} por un.</div></div><div><div className="cart-price">{formatCurrency(item.lineTotal)}</div><button className="remove-link" onClick={() => onRemove(item.cartId)}>Remover</button></div></article>)}<div className="quote-total"><span className="quote-total-label">Total geral</span><span className="quote-total-value">{formatCurrency(total)}</span></div></>}
       </div>
       <div className="mt-5 grid gap-3"><button className="subtle-button" onClick={onBack}>Adicionar outro item</button><button className="primary-button" disabled={!items.length} onClick={onFinalize}>Finalizar orçamento</button></div>
     </div>

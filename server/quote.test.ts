@@ -1,4 +1,4 @@
-import { buildWhatsAppMessage, calculateLineTotal, calculateUnitPrice, formatEstimateNumber } from "../shared/quote";
+import { buildWhatsAppMessage, calculateLineTotal, calculateServiceBasePrice, calculateUnitPrice, formatEstimateNumber } from "../shared/quote";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 import { describe, expect, it } from "vitest";
@@ -30,6 +30,8 @@ describe("regras de orçamento", () => {
     expect(calculateUnitPrice(100, "medio")).toBe(120);
     expect(calculateUnitPrice(100, "pesado")).toBe(140);
     expect(calculateLineTotal(100, "pesado", 3)).toBe(420);
+    expect(calculateServiceBasePrice(180, 120, "lavagem_impermeabilizacao")).toBe(300);
+    expect(calculateLineTotal(calculateServiceBasePrice(180, 120, "lavagem_impermeabilizacao"), "medio", 2)).toBe(720);
   });
 
   it("formata o número pesquisável e monta a mensagem detalhada do WhatsApp", () => {
@@ -48,7 +50,7 @@ describe("regras de orçamento", () => {
         itemType: "retrátil",
         fabric: "linho",
         dirtLevel: "medio",
-        service: "lavagem",
+        service: "lavagem_impermeabilizacao",
         quantity: 2,
         unitPrice: 276,
         lineTotal: 552,
@@ -59,7 +61,7 @@ describe("regras de orçamento", () => {
     expect(message).toContain("Orçamento #000042");
     expect(message).toContain("Marina Souza");
     expect(message).toContain("Rua das Flores, 100, Centro — São Paulo — SP");
-    expect(message).toContain("Sofá — Lavagem");
+    expect(message).toContain("Sofá — Lavagem + Impermeabilização");
     expect(message).toContain("2 un. × R$ 276,00 = R$ 552,00");
     expect(message).toContain("Total geral: R$ 552,00");
   });

@@ -43,3 +43,4 @@
 - [x] Executar nova validação em celular, tablet e tela ampla com evidências separadas de login completo, catálogo autenticado, busca por número, busca por nome e resumo.
 - [x] Registrar artefatos verificáveis da tela ampla e do desktop para todas as etapas críticas, além das evidências existentes de celular e tablet.
 - [x] Executar e registrar artefatos específicos de desktop para login completo, catálogo autenticado, busca por número, busca por nome e resumo.
+- [x] Permitir selecionar lavagem e impermeabilização no mesmo item, somar seus valores, persistir ambos os serviços e exibi-los no resumo e WhatsApp sem modificar o layout existente.

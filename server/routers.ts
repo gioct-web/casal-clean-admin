@@ -10,6 +10,7 @@ import {
 import {
   buildWhatsAppMessage,
   calculateLineTotal,
+  calculateServiceBasePrice,
   calculateUnitPrice,
   dirtLevels,
   dirtLevelInfo,
@@ -31,7 +32,7 @@ import {
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
 
-const serviceSchema = z.enum(["lavagem", "impermeabilizacao"]);
+const serviceSchema = z.enum(["lavagem", "impermeabilizacao", "lavagem_impermeabilizacao"]);
 const dirtSchema = z.enum(dirtLevels);
 const passwordSchema = z.string().min(8, "A senha deve ter pelo menos 8 caracteres.");
 
@@ -163,7 +164,7 @@ export const appRouter = router({
           if (!rule || !rule.active) {
             throw new TRPCError({ code: "BAD_REQUEST", message: "Um dos preços selecionados não está mais disponível." });
           }
-          const basePrice = item.service === "lavagem" ? toNumber(rule.washPrice) : toNumber(rule.waterproofPrice);
+          const basePrice = calculateServiceBasePrice(toNumber(rule.washPrice), toNumber(rule.waterproofPrice), item.service);
           calculatedItems.push({
             rule,
             dirtLevel: item.dirtLevel,
