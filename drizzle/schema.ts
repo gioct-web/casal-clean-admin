@@ -69,6 +69,7 @@ export const estimates = mysqlTable(
     customerCity: varchar("customerCity", { length: 160 }),
     customerState: varchar("customerState", { length: 2 }),
     scheduledAt: timestamp("scheduledAt").notNull(),
+    scheduleStatus: mysqlEnum("scheduleStatus", ["scheduled", "to_define"]).default("scheduled").notNull(),
     subtotal: decimal("subtotal", { precision: 12, scale: 2 }).notNull(),
     total: decimal("total", { precision: 12, scale: 2 }).notNull(),
     status: mysqlEnum("status", ["draft", "sent"]).default("sent").notNull(),

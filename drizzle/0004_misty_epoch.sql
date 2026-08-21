@@ -1,0 +1,1 @@
+ALTER TABLE `estimates` ADD `scheduleStatus` enum('scheduled','to_define') DEFAULT 'scheduled' NOT NULL;

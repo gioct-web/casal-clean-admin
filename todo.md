@@ -44,3 +44,10 @@
 - [x] Registrar artefatos verificáveis da tela ampla e do desktop para todas as etapas críticas, além das evidências existentes de celular e tablet.
 - [x] Executar e registrar artefatos específicos de desktop para login completo, catálogo autenticado, busca por número, busca por nome e resumo.
 - [x] Permitir selecionar lavagem e impermeabilização no mesmo item, somar seus valores, persistir ambos os serviços e exibi-los no resumo e WhatsApp sem modificar o layout existente.
+- [x] Analisar o arquivo de requisitos anexado e implementar integralmente os ajustes solicitados, preservando a interface e os fluxos já consolidados.
+- [x] Substituir a paleta de destaque dourada por azul profissional acessível, preservando tipografia, espaçamento, estrutura e animações existentes.
+- [x] Reforçar a identificação visual da Casal Clean no login e no cabeçalho utilizando o símbolo de marca já presente no sistema.
+- [x] Permitir pular o agendamento por meio de uma ação secundária que use o valor seguro “A definir com o cliente”, mantendo validação, banco e WhatsApp compatíveis.
+- [x] Garantir valor padrão para o identificador sequencial do orçamento durante criação e exibição, sem IDs nulos.
+- [x] Reduzir trabalho redundante no login e antecipar a navegação interna após autenticação, sem comprometer a segurança da sessão.
+- [x] Preparar o HTML, alvos de toque e abertura de WhatsApp para uso fluido em WebView Android e documentar o caminho de empacotamento APK.

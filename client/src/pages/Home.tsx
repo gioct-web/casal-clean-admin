@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { dirtLevelInfo, formatCurrency, calculateLineTotal, calculateServiceBasePrice, calculateUnitPrice, serviceInfo, type DirtLevel, type ServiceType } from "@shared/quote";
+import { shouldOpenWhatsAppInCurrentView } from "@shared/webview";
 import {
   Armchair,
   ArrowLeft,
@@ -70,6 +71,7 @@ type CustomerData = {
   customerCity: string;
   customerState: BrazilianState | "";
   scheduledAt: string;
+  scheduleSkipped: boolean;
 };
 
 type BrazilianState = "AC" | "AL" | "AP" | "AM" | "BA" | "CE" | "DF" | "ES" | "GO" | "MA" | "MT" | "MS" | "MG" | "PA" | "PB" | "PR" | "PE" | "PI" | "RJ" | "RN" | "RS" | "RO" | "RR" | "SC" | "SP" | "SE" | "TO";
@@ -91,6 +93,7 @@ const CUSTOMER_DEFAULT: CustomerData = {
   customerCity: "",
   customerState: "",
   scheduledAt: "",
+  scheduleSkipped: false,
 };
 
 function formatPhoneInput(value: string) {
@@ -99,6 +102,19 @@ function formatPhoneInput(value: string) {
   if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
   if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function currentLocalDateTime() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 16);
+}
+
+function isAndroidWebView() {
+  return shouldOpenWhatsAppInCurrentView(
+    window.navigator.userAgent,
+    Boolean((window as Window & { Capacitor?: unknown }).Capacitor)
+  );
 }
 
 function getStorageValue<T>(key: string, fallback: T): T {
@@ -140,7 +156,7 @@ function toggleServiceSelection(current: ServiceType, option: "lavagem" | "imper
 function AppBrand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`brand ${compact ? "login-brand" : ""}`}>
-      <span className="brand-mark" aria-hidden="true"><Box size={21} strokeWidth={1.8} /></span>
+      <span className="brand-mark" role="img" aria-label="Logotipo Casal Clean"><Box size={21} strokeWidth={1.8} /></span>
       <span>
         <span className="brand-title block">CASAL CLEAN</span>
         <span className="brand-subtitle block">Orçamento Personalizado</span>
@@ -170,9 +186,9 @@ function Header({ user, onLogout, onNavigate }: { user: { name: string | null; r
           </button>
           {open && (
             <div className="absolute right-0 top-[47px] z-40 w-52 overflow-hidden rounded-[10px] border border-[#454545] bg-[#292929] p-1 shadow-2xl">
-              <button className="flex w-full items-center gap-2 rounded-[7px] px-3 py-2 text-left text-[12px] text-[#ece8e2] hover:bg-[#343129]" onClick={() => { setOpen(false); onNavigate("/"); }}><LayoutList size={15} color="#D4A843" />Novo orçamento</button>
-              <button className="flex w-full items-center gap-2 rounded-[7px] px-3 py-2 text-left text-[12px] text-[#ece8e2] hover:bg-[#343129]" onClick={() => { setOpen(false); onNavigate("/historico"); }}><History size={15} color="#D4A843" />Histórico</button>
-              {user?.role === "admin" && <button className="flex w-full items-center gap-2 rounded-[7px] px-3 py-2 text-left text-[12px] text-[#ece8e2] hover:bg-[#343129]" onClick={() => { setOpen(false); onNavigate("/admin"); }}><Settings2 size={15} color="#D4A843" />Administração</button>}
+              <button className="flex w-full items-center gap-2 rounded-[7px] px-3 py-2 text-left text-[12px] text-[#ece8e2] hover:bg-[#343129]" onClick={() => { setOpen(false); onNavigate("/"); }}><LayoutList size={15} color="#38BDF8" />Novo orçamento</button>
+              <button className="flex w-full items-center gap-2 rounded-[7px] px-3 py-2 text-left text-[12px] text-[#ece8e2] hover:bg-[#343129]" onClick={() => { setOpen(false); onNavigate("/historico"); }}><History size={15} color="#38BDF8" />Histórico</button>
+              {user?.role === "admin" && <button className="flex w-full items-center gap-2 rounded-[7px] px-3 py-2 text-left text-[12px] text-[#ece8e2] hover:bg-[#343129]" onClick={() => { setOpen(false); onNavigate("/admin"); }}><Settings2 size={15} color="#38BDF8" />Administração</button>}
               <div className="mx-2 my-1 border-t border-[#424242]" />
               <div className="flex items-center gap-2 px-3 py-2 text-[11px] text-[#aaa6a1]"><UserRound size={14} />{user?.name || "Usuário"}</div>
               <button className="flex w-full items-center gap-2 rounded-[7px] px-3 py-2 text-left text-[12px] text-[#f4a2a2] hover:bg-[#3a2929]" onClick={onLogout}><LogOut size={15} />Sair</button>
@@ -184,7 +200,7 @@ function Header({ user, onLogout, onNavigate }: { user: { name: string | null; r
   );
 }
 
-function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: { id: number; username: string | null; name: string | null; role: "admin" | "user" }) => void }) {
+function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: { id: number; username: string | null; name: string | null; email: string | null; role: "admin" | "user" }) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const login = trpc.auth.login.useMutation({
@@ -315,6 +331,11 @@ function CustomerScreen({ items, customer, setCustomer, onBack, onComplete }: { 
     setCustomer({ ...customer, customerState: value as CustomerData["customerState"], customerCity: "" });
     setErrors(current => ({ ...current, customerState: undefined, customerCity: undefined }));
   };
+  const skipSchedule = () => {
+    setCustomer({ ...customer, scheduledAt: currentLocalDateTime(), scheduleSkipped: true });
+    setErrors(current => ({ ...current, scheduledAt: undefined }));
+    toast.info("Agendamento marcado como “A definir com o cliente”.");
+  };
   const submit = async () => {
     const next: Partial<Record<keyof CustomerData, string>> = {};
     if (customer.customerName.trim().length < 3) next.customerName = "Informe o nome completo.";
@@ -322,10 +343,10 @@ function CustomerScreen({ items, customer, setCustomer, onBack, onComplete }: { 
     if (customer.customerAddress.trim().length < 8 || !/\d/.test(customer.customerAddress)) next.customerAddress = "Informe rua, número e bairro.";
     if (customer.customerCity.trim().length < 2) next.customerCity = "Informe a cidade.";
     if (!customer.customerState) next.customerState = "Selecione a UF.";
-    if (!customer.scheduledAt || Number.isNaN(new Date(customer.scheduledAt).getTime())) next.scheduledAt = "Selecione uma data e um horário válidos.";
+    if (!customer.scheduleSkipped && (!customer.scheduledAt || Number.isNaN(new Date(customer.scheduledAt).getTime()))) next.scheduledAt = "Selecione uma data e um horário válidos.";
     setErrors(next);
     if (Object.keys(next).length) return;
-    const whatsappWindow = window.open("about:blank", "_blank");
+    const whatsappWindow = isAndroidWebView() ? null : window.open("about:blank", "_blank");
     try {
       await validateCity.mutateAsync({ city: customer.customerCity.trim(), state: customer.customerState as BrazilianState });
       onComplete(customer, whatsappWindow);
@@ -342,8 +363,8 @@ function CustomerScreen({ items, customer, setCustomer, onBack, onComplete }: { 
         <div className="field-group"><label className="label" htmlFor="customerPhone">Seu telefone *</label><div className="input-shell"><Phone className="input-icon" /><input id="customerPhone" className="text-input" inputMode="tel" placeholder="(11) 99999-9999" value={customer.customerPhone} onChange={event => update("customerPhone", formatPhoneInput(event.target.value))} /></div>{errors.customerPhone && <p className="field-error">{errors.customerPhone}</p>}</div>
         <div className="field-group"><label className="label" htmlFor="customerAddress">Endereço *</label><textarea id="customerAddress" className="textarea-input" placeholder="Rua, número e bairro" value={customer.customerAddress} onChange={event => update("customerAddress", event.target.value)} />{errors.customerAddress && <p className="field-error">{errors.customerAddress}</p>}</div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_110px]"><div className="field-group"><label className="label" htmlFor="customerCity">Cidade *</label><input id="customerCity" className="text-input" list="municipality-suggestions" autoComplete="address-level2" disabled={!customer.customerState} placeholder={customer.customerState ? "Digite ou selecione uma cidade" : "Selecione a UF primeiro"} value={customer.customerCity} onChange={event => update("customerCity", event.target.value)} /><datalist id="municipality-suggestions">{municipalitySuggestions.map(city => <option key={city} value={city} />)}</datalist>{customer.customerState && <p className="mt-1 text-[10px] text-[#aaa6a1]">{municipalities.isLoading ? "Carregando cidades..." : "Sugestões oficiais conforme a UF selecionada."}</p>}{errors.customerCity && <p className="field-error">{errors.customerCity}</p>}</div><div className="field-group"><label className="label" htmlFor="customerState">UF *</label><select id="customerState" className="select-input" value={customer.customerState} onChange={event => changeState(event.target.value)}><option value="">UF</option>{brazilianStates.map(state => <option key={state} value={state}>{state}</option>)}</select>{errors.customerState && <p className="field-error">{errors.customerState}</p>}</div></div>
-        <div className="field-group"><label className="label" htmlFor="scheduledAt">Data e horário do serviço *</label><div className="input-shell"><CalendarDays className="input-icon" /><input id="scheduledAt" className="text-input" type="datetime-local" value={customer.scheduledAt} onChange={event => update("scheduledAt", event.target.value)} /></div>{errors.scheduledAt && <p className="field-error">{errors.scheduledAt}</p>}</div>
-        <div className="contact-card p-4 text-[11px] leading-6 text-[#b5b0ab]"><div className="flex items-center gap-2 text-[#D4A843]"><Phone size={14} />(11) 97685-7410</div><div>atendimento.casalclean@gmail.com</div></div>
+        <div className="field-group"><div className="label-row"><label className="label" htmlFor="scheduledAt">Data e horário do serviço *</label><button className="secondary-inline-button" type="button" onClick={skipSchedule}>Cancelar agendamento</button></div><div className="input-shell"><CalendarDays className="input-icon" /><input id="scheduledAt" className="text-input" type="datetime-local" value={customer.scheduledAt} onChange={event => setCustomer({ ...customer, scheduledAt: event.target.value, scheduleSkipped: false })} /></div>{customer.scheduleSkipped && <p className="field-hint">Agendamento: A definir com o cliente. Uma data de referência será usada com segurança no registro.</p>}{errors.scheduledAt && <p className="field-error">{errors.scheduledAt}</p>}</div>
+        <div className="contact-card p-4 text-[11px] leading-6 text-[#b5b0ab]"><div className="flex items-center gap-2 text-[#38BDF8]"><Phone size={14} />(11) 97685-7410</div><div>atendimento.casalclean@gmail.com</div></div>
       </div>
       <button className="whatsapp-button mt-5" disabled={!items.length || validateCity.isPending} onClick={submit}>{validateCity.isPending ? <Loader2 className="animate-spin" size={19} /> : <Phone size={19} />}Enviar orçamento</button>
     </div>
@@ -359,7 +380,7 @@ function HistoryScreen({ onBack, onReopen }: { onBack: () => void; onReopen: (id
   return (
     <div>
       <div className="flex items-center gap-3"><button className="back-button" onClick={onBack} aria-label="Voltar"><ArrowLeft size={18} /></button><h1 className="section-heading no-after !mb-0">Histórico de orçamentos</h1></div>
-      <div className="history-card mt-5"><div className="history-topbar"><div className="input-shell"><Search className="input-icon" /><input className="text-input" inputMode="search" placeholder="Buscar por número ou nome do cliente" value={search} onChange={event => setSearch(event.target.value)} /></div></div>{data.isLoading ? <div className="empty-state"><Loader2 className="mx-auto mb-2 animate-spin" />Carregando histórico...</div> : !data.data?.length ? <div className="empty-state">Nenhum orçamento encontrado.</div> : <div className="table-scroll"><table className="data-table"><thead><tr><th>#</th><th>Cliente</th><th>Agendamento</th><th>Total</th><th></th></tr></thead><tbody>{data.data.map(estimate => <tr key={estimate.id}><td>{estimate.quoteNumber}</td><td><strong>{estimate.customerName}</strong><br /><span className="text-[#aaa6a1]">{estimate.customerPhone}</span></td><td>{new Date(estimate.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</td><td className="table-money">{formatCurrency(estimate.total)}</td><td><button className="table-button" onClick={() => onReopen(estimate.id)}>Reabrir</button></td></tr>)}</tbody></table></div>}</div>
+      <div className="history-card mt-5"><div className="history-topbar"><div className="input-shell"><Search className="input-icon" /><input className="text-input" inputMode="search" placeholder="Buscar por número ou nome do cliente" value={search} onChange={event => setSearch(event.target.value)} /></div></div>{data.isLoading ? <div className="empty-state"><Loader2 className="mx-auto mb-2 animate-spin" />Carregando histórico...</div> : !data.data?.length ? <div className="empty-state">Nenhum orçamento encontrado.</div> : <div className="table-scroll"><table className="data-table"><thead><tr><th>#</th><th>Cliente</th><th>Agendamento</th><th>Total</th><th></th></tr></thead><tbody>{data.data.map(estimate => <tr key={estimate.id}><td>{estimate.quoteNumber}</td><td><strong>{estimate.customerName}</strong><br /><span className="text-[#aaa6a1]">{estimate.customerPhone}</span></td><td>{estimate.scheduleStatus === "to_define" ? "A definir com o cliente" : new Date(estimate.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</td><td className="table-money">{formatCurrency(estimate.total)}</td><td><button className="table-button" onClick={() => onReopen(estimate.id)}>Reabrir</button></td></tr>)}</tbody></table></div>}</div>
     </div>
   );
 }
@@ -407,8 +428,8 @@ function RestrictedPage({ onBack }: { onBack: () => void }) {
 export default function Home() {
   const [location, setLocation] = useLocation();
   const utils = trpc.useUtils();
-  const auth = trpc.auth.me.useQuery(undefined, { retry: false, staleTime: 60_000 });
-  const catalog = trpc.catalog.list.useQuery(undefined, { enabled: Boolean(auth.data) });
+  const auth = trpc.auth.me.useQuery(undefined, { retry: false, staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false });
+  const catalog = trpc.catalog.list.useQuery(undefined, { enabled: Boolean(auth.data), staleTime: 5 * 60_000, refetchOnWindowFocus: false });
   const [cart, setCart] = useSessionValue<CartItem[]>("casal-clean-cart", []);
   const [draft, setDraft] = useSessionValue<QuoteDraft | null>("casal-clean-draft", null);
   const [customer, setCustomer] = useSessionValue<CustomerData>("casal-clean-customer", CUSTOMER_DEFAULT);
@@ -438,7 +459,7 @@ export default function Home() {
         lineTotal: item.lineTotal,
       }));
       setCart(reopened);
-      setCustomer({ customerName: data.estimate.customerName, customerPhone: formatPhoneInput(data.estimate.customerPhone), customerAddress: data.estimate.customerAddress, customerCity: data.estimate.customerCity || "", customerState: (data.estimate.customerState as BrazilianState | null) || "", scheduledAt: new Date(data.estimate.scheduledAt).toISOString().slice(0, 16) });
+      setCustomer({ customerName: data.estimate.customerName, customerPhone: formatPhoneInput(data.estimate.customerPhone), customerAddress: data.estimate.customerAddress, customerCity: data.estimate.customerCity || "", customerState: (data.estimate.customerState as BrazilianState | null) || "", scheduledAt: new Date(data.estimate.scheduledAt).toISOString().slice(0, 16), scheduleSkipped: data.estimate.scheduleStatus === "to_define" });
       toast.success("Orçamento reaberto para edição.");
       navigate("/orcamento");
     } catch {
@@ -450,7 +471,8 @@ export default function Home() {
     saveEstimate.mutate({
       ...data,
       customerState: data.customerState as BrazilianState,
-      scheduledAt: new Date(data.scheduledAt).toISOString(),
+      scheduledAt: data.scheduleSkipped ? undefined : new Date(data.scheduledAt).toISOString(),
+      scheduleStatus: data.scheduleSkipped ? "to_define" : "scheduled",
       expectedTotal: cart.reduce((sum, item) => sum + item.lineTotal, 0),
       items: cart.map(item => ({ pricingRuleId: item.pricingRuleId, dirtLevel: item.dirtLevel, service: item.service, quantity: item.quantity })),
     }, {
@@ -460,6 +482,8 @@ export default function Home() {
         if (whatsappWindow && !whatsappWindow.closed) {
           whatsappWindow.location.assign(whatsappUrl);
           try { whatsappWindow.opener = null; } catch { /* O navegador pode impedir a alteração da referência. */ }
+        } else if (isAndroidWebView()) {
+          window.location.assign(whatsappUrl);
         } else {
           window.open(whatsappUrl, "_blank", "noopener,noreferrer");
         }
@@ -473,8 +497,8 @@ export default function Home() {
     });
   };
 
-  if (auth.isLoading) return <div className="login-screen"><Loader2 className="animate-spin text-[#D4A843]" size={32} /></div>;
-  if (!auth.data) return <LoginScreen onLoggedIn={() => { utils.auth.me.invalidate(); }} />;
+  if (auth.isLoading) return <div className="login-screen"><Loader2 className="animate-spin text-[#38BDF8]" size={32} /></div>;
+  if (!auth.data) return <LoginScreen onLoggedIn={user => { utils.auth.me.setData(undefined, user); void utils.catalog.list.prefetch(); }} />;
 
   const user = auth.data;
   const main = (() => {

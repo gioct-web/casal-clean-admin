@@ -141,7 +141,8 @@ export const appRouter = router({
           customerAddress: z.string().trim().min(8, "Informe rua, número e bairro.").max(1000),
           customerCity: z.string().trim().min(2, "Informe a cidade.").max(160),
           customerState: stateSchema,
-          scheduledAt: z.string().datetime(),
+          scheduledAt: z.string().datetime().optional(),
+          scheduleStatus: z.enum(["scheduled", "to_define"]).default("scheduled"),
           expectedTotal: z.number().finite().nonnegative(),
           items: z.array(quoteItemSchema).min(1, "Adicione ao menos um item ao orçamento."),
         })
@@ -182,7 +183,10 @@ export const appRouter = router({
         if (!(await validateBrazilianCity(input.customerCity, input.customerState))) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "A cidade informada não pertence à UF selecionada." });
         }
-        const scheduledAt = new Date(input.scheduledAt);
+        const scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : new Date();
+        if (Number.isNaN(scheduledAt.getTime())) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione uma data e um horário válidos." });
+        }
         const inserted = await db.insert(estimates).values({
           customerName: input.customerName,
           customerPhone: input.customerPhone,
@@ -190,11 +194,15 @@ export const appRouter = router({
           customerCity: input.customerCity,
           customerState: input.customerState,
           scheduledAt,
+          scheduleStatus: input.scheduleStatus,
           subtotal: total.toFixed(2),
           total: total.toFixed(2),
           createdByUserId: ctx.user.id,
         });
-        const estimateId = Number(inserted[0].insertId);
+        const estimateId = Number(inserted[0]?.insertId);
+        if (!Number.isInteger(estimateId) || estimateId <= 0) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível gerar o identificador do orçamento." });
+        }
 
         await db.insert(estimateItems).values(
           calculatedItems.map(item => ({
@@ -226,6 +234,7 @@ export const appRouter = router({
           customerCity: persisted.estimate.customerCity,
           customerState: persisted.estimate.customerState,
           scheduledAt: persisted.estimate.scheduledAt,
+          scheduleStatus: persisted.estimate.scheduleStatus,
           total: persistedTotal,
           items: persisted.items.map(item => ({
             productName: item.productName,

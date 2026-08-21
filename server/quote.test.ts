@@ -1,6 +1,7 @@
 import { buildWhatsAppMessage, calculateLineTotal, calculateServiceBasePrice, calculateUnitPrice, formatEstimateNumber } from "../shared/quote";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+import { shouldOpenWhatsAppInCurrentView } from "@shared/webview";
 import { describe, expect, it } from "vitest";
 
 function createContext(role: "admin" | "user"): TrpcContext {
@@ -43,6 +44,7 @@ describe("regras de orçamento", () => {
       customerCity: "São Paulo",
       customerState: "SP",
       scheduledAt: new Date("2026-08-21T13:30:00.000Z"),
+      scheduleStatus: "to_define",
       total: 552,
       items: [{
         productName: "Sofá",
@@ -62,8 +64,20 @@ describe("regras de orçamento", () => {
     expect(message).toContain("Marina Souza");
     expect(message).toContain("Rua das Flores, 100, Centro — São Paulo — SP");
     expect(message).toContain("Sofá — Lavagem + Impermeabilização");
+    expect(message).toContain("Agendamento: A definir com o cliente");
     expect(message).toContain("2 un. × R$ 276,00 = R$ 552,00");
     expect(message).toContain("Total geral: R$ 552,00");
+  });
+
+  it("gera um identificador inicial seguro enquanto o banco ainda não atribuiu o número sequencial", () => {
+    expect(formatEstimateNumber()).toBe("#000001");
+    expect(formatEstimateNumber(null)).toBe("#000001");
+  });
+
+  it("usa a abertura direta do WhatsApp quando estiver em uma WebView Android", () => {
+    expect(shouldOpenWhatsAppInCurrentView("Mozilla/5.0 (Linux; Android 14; Pixel; wv) AppleWebKit/537.36")).toBe(true);
+    expect(shouldOpenWhatsAppInCurrentView("Mozilla/5.0 (Linux; Android 14; Pixel) Chrome/120 Mobile Safari/537.36")).toBe(false);
+    expect(shouldOpenWhatsAppInCurrentView("Mozilla/5.0", true)).toBe(true);
   });
 });
 

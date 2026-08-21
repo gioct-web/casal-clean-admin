@@ -37,8 +37,10 @@ export function formatCurrency(value: number) {
   }).format(value);
 }
 
-export function formatEstimateNumber(estimateId: number) {
-  return `#${String(estimateId).padStart(6, "0")}`;
+export function formatEstimateNumber(estimateId?: number | null) {
+  const parsedId = Number(estimateId);
+  const safeId = Number.isInteger(parsedId) && parsedId > 0 ? parsedId : 1;
+  return `#${String(safeId).padStart(6, "0")}`;
 }
 
 export function normalizePhone(phone: string) {
@@ -65,13 +67,15 @@ export function buildWhatsAppMessage(data: {
   customerCity: string | null;
   customerState: string | null;
   scheduledAt: Date;
+  scheduleStatus?: "scheduled" | "to_define";
   items: WhatsAppEstimateItem[];
   total: number;
 }) {
-  const schedule = new Intl.DateTimeFormat("pt-BR", {
+  const formattedSchedule = new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
   }).format(data.scheduledAt);
+  const schedule = data.scheduleStatus === "to_define" ? "A definir com o cliente" : formattedSchedule;
   const lines = data.items.map((item, index) => {
     const details = [item.places, item.itemType, item.fabric, dirtLevelInfo[item.dirtLevel].label].join(" · ");
     return [
